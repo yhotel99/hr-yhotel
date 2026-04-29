@@ -1,0 +1,546 @@
+import React, { useState, useEffect, useMemo } from 'react';
+import { User, UserRole, ContractType, EmployeeStatus, EMPLOYEE_STATUS_LABELS, CONTRACT_TYPE_LABELS, Department, Branch } from '../../types';
+import { getAllUsers, createUser, getDepartments, getBranches } from '../../services/db';
+import { exportToCSV } from '../../utils/export';
+
+interface UsersManagementProps {
+  onEditUser: (user: User) => void;
+  onRegisterReload?: (handler: () => void | Promise<void>) => void;
+  language: 'vi' | 'en';
+}
+
+type EmployeeStatusTab = 'UNSET' | EmployeeStatus;
+
+const defaultUserForm = {
+  email: '',
+  name: '',
+  department: '',
+  employeeCode: '',
+  branchId: '',
+};
+
+const UsersManagement: React.FC<UsersManagementProps> = ({ onEditUser, onRegisterReload, language }) => {
+  const [employees, setEmployees] = useState<User[]>([]);
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [branches, setBranches] = useState<Branch[]>([]);
+  const [selectedStatusTab, setSelectedStatusTab] = useState<EmployeeStatusTab>(EmployeeStatus.ACTIVE);
+  const [showUserForm, setShowUserForm] = useState(false);
+  const [userForm, setUserForm] = useState(defaultUserForm);
+  const [userFormError, setUserFormError] = useState('');
+  const [fieldErrors, setFieldErrors] = useState<{ email?: string; name?: string; department?: string }>({});
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  useEffect(() => {
+    if (onRegisterReload) {
+      onRegisterReload(loadData);
+    }
+  }, [onRegisterReload]);
+
+  const t = {
+    vi: {
+      addEmployee: '+ Thêm nhân viên',
+      closeForm: 'Đóng form',
+      exportCSV: 'Xuất CSV',
+      emailLogin: 'Email (đăng nhập)',
+      fullName: 'Họ tên',
+      department: 'Phòng ban',
+      employeeCode: 'Mã nhân viên',
+      branch: 'Chi nhánh',
+      createAccount: 'Tạo tài khoản',
+      emailRequired: 'Email (đăng nhập) là bắt buộc',
+      emailInvalid: 'Email không hợp lệ (ví dụ: user@example.com)',
+      nameRequired: 'Họ tên là bắt buộc',
+      departmentRequired: 'Bộ phận là bắt buộc',
+      checkRequiredFields: 'Vui lòng kiểm tra lại các trường bắt buộc',
+      unableToCreate: 'Không thể tạo user',
+      noDataToExport: 'Không có dữ liệu để xuất',
+      selectDepartment: '-- Chọn phòng ban --',
+      selectBranch: '-- Chọn chi nhánh --',
+      noDepartments: '⚠️ Chưa có phòng ban nào. Vui lòng tạo phòng ban trước.',
+      noBranches: '⚠️ Chưa có chi nhánh nào. Vui lòng tạo chi nhánh trước.',
+      noEmployees: 'Chưa có nhân viên nào',
+      employee: 'Nhân viên',
+      email: 'Email',
+      role: 'Vai trò',
+      empCode: 'Mã NV',
+      salary: 'Lương',
+      status: 'Trạng thái',
+      actions: 'Thao tác',
+      edit: 'Chỉnh sửa',
+      admin: 'Admin',
+      employeeRole: 'Nhân viên',
+      emailPlaceholder: 'user@congty.com',
+      namePlaceholder: 'Nguyễn Văn A',
+      codePlaceholder: 'NV001',
+      exportFullName: 'Họ tên',
+      exportDepartment: 'Phòng ban',
+      exportEmployeeCode: 'Mã NV',
+      exportJobTitle: 'Chức danh',
+      exportRole: 'Vai trò',
+      exportContractType: 'Loại hợp đồng',
+      exportStatus: 'Trạng thái',
+      exportGrossSalary: 'Lương cơ bản',
+      exportSocialInsurance: 'Lương BHXH',
+      exportTraineeSalary: 'Lương học việc',
+      statusSubtabs: 'Trạng thái nhân viên',
+      unsetStatusTab: 'Chưa gán',
+      noFilteredEmployees: 'Không có nhân viên phù hợp trạng thái đã chọn',
+    },
+    en: {
+      addEmployee: '+ Add Employee',
+      closeForm: 'Close Form',
+      exportCSV: 'Export CSV',
+      emailLogin: 'Email (Login)',
+      fullName: 'Full Name',
+      department: 'Department',
+      employeeCode: 'Employee Code',
+      branch: 'Branch',
+      createAccount: 'Create Account',
+      emailRequired: 'Email (login) is required',
+      emailInvalid: 'Invalid email (e.g., user@example.com)',
+      nameRequired: 'Full name is required',
+      departmentRequired: 'Department is required',
+      checkRequiredFields: 'Please check the required fields',
+      unableToCreate: 'Unable to create user',
+      noDataToExport: 'No data to export',
+      selectDepartment: '-- Select Department --',
+      selectBranch: '-- Select Branch --',
+      noDepartments: '⚠️ No departments available. Please create a department first.',
+      noBranches: '⚠️ No branches available. Please create a branch first.',
+      noEmployees: 'No employees yet',
+      employee: 'Employee',
+      email: 'Email',
+      role: 'Role',
+      empCode: 'Emp Code',
+      salary: 'Salary',
+      status: 'Status',
+      actions: 'Actions',
+      edit: 'Edit',
+      admin: 'Admin',
+      employeeRole: 'Employee',
+      emailPlaceholder: 'user@company.com',
+      namePlaceholder: 'John Doe',
+      codePlaceholder: 'EMP001',
+      exportFullName: 'Full Name',
+      exportDepartment: 'Department',
+      exportEmployeeCode: 'Employee Code',
+      exportJobTitle: 'Job Title',
+      exportRole: 'Role',
+      exportContractType: 'Contract Type',
+      exportStatus: 'Status',
+      exportGrossSalary: 'Gross Salary',
+      exportSocialInsurance: 'Social Insurance Salary',
+      exportTraineeSalary: 'Trainee Salary',
+      statusSubtabs: 'Employee status',
+      unsetStatusTab: 'Unset',
+      noFilteredEmployees: 'No employees match the selected status',
+    }
+  };
+
+  const text = t[language];
+
+  const loadData = async () => {
+    const [users, depts, branchesData] = await Promise.all([
+      getAllUsers(),
+      getDepartments(),
+      getBranches()
+    ]);
+    setEmployees(users);
+    setDepartments(depts.filter(d => d.isActive)); // Only get active departments
+    setBranches(branchesData.filter(b => b.isActive)); // Only get active branches
+  };
+
+  const validateForm = (): boolean => {
+    const errors: { email?: string; name?: string; department?: string } = {};
+    
+    // Validate email with standard regex pattern
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!userForm.email.trim()) {
+      errors.email = text.emailRequired;
+    } else if (!emailRegex.test(userForm.email.trim())) {
+      errors.email = text.emailInvalid;
+    }
+    
+    // Validate name
+    if (!userForm.name.trim()) {
+      errors.name = text.nameRequired;
+    }
+    
+    // Validate department
+    if (!userForm.department.trim()) {
+      errors.department = text.departmentRequired;
+    }
+    
+    setFieldErrors(errors);
+    setUserFormError(Object.keys(errors).length > 0 ? text.checkRequiredFields : '');
+    
+    return Object.keys(errors).length === 0;
+  };
+
+  const handleCreateUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setUserFormError('');
+    setFieldErrors({});
+    
+    if (!validateForm()) {
+      return; // Stop if there are validation errors
+    }
+    
+    try {
+      await createUser({
+        name: userForm.name.trim(),
+        email: userForm.email.trim(),
+        role: UserRole.EMPLOYEE,
+        department: userForm.department.trim(),
+        employeeCode: userForm.employeeCode.trim() || undefined,
+        branchId: userForm.branchId || undefined,
+        contractType: ContractType.OFFICIAL,
+        status: EmployeeStatus.ACTIVE,
+      });
+      setUserForm(defaultUserForm);
+      setFieldErrors({});
+      setShowUserForm(false);
+      loadData();
+    } catch (err: any) {
+      setUserFormError(err?.message || text.unableToCreate);
+    }
+  };
+
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(amount);
+  };
+
+  const statusTabCounts = useMemo(() => {
+    let active = 0;
+    let left = 0;
+    let unset = 0;
+    for (const e of employees) {
+      if (!e.status) unset += 1;
+      else if (e.status === EmployeeStatus.ACTIVE) active += 1;
+      else if (e.status === EmployeeStatus.LEFT) left += 1;
+    }
+    return { active, left, unset };
+  }, [employees]);
+
+  const filteredEmployees = employees.filter(emp => {
+    if (selectedStatusTab === 'UNSET') return !emp.status;
+    return emp.status === selectedStatusTab;
+  });
+
+  const statusTabs: { id: EmployeeStatusTab; label: string }[] = [
+    { id: EmployeeStatus.ACTIVE, label: EMPLOYEE_STATUS_LABELS[EmployeeStatus.ACTIVE] },
+    { id: EmployeeStatus.LEFT, label: EMPLOYEE_STATUS_LABELS[EmployeeStatus.LEFT] },
+    { id: 'UNSET', label: text.unsetStatusTab },
+  ];
+
+  const countForStatusTab = (id: EmployeeStatusTab) => {
+    switch (id) {
+      case 'UNSET':
+        return statusTabCounts.unset;
+      case EmployeeStatus.ACTIVE:
+        return statusTabCounts.active;
+      case EmployeeStatus.LEFT:
+        return statusTabCounts.left;
+      default:
+        return 0;
+    }
+  };
+
+  const handleExport = () => {
+    if (filteredEmployees.length === 0) {
+      alert(text.noDataToExport);
+      return;
+    }
+    const exportData = filteredEmployees.map(emp => ({
+      [text.exportFullName]: emp.name,
+      [text.email]: emp.email,
+      [text.exportDepartment]: emp.department,
+      [text.exportEmployeeCode]: emp.employeeCode || '',
+      [text.exportJobTitle]: emp.jobTitle || '',
+      [text.exportRole]: emp.role === UserRole.ADMIN ? text.admin : text.employeeRole,
+      [text.exportContractType]: emp.contractType ? CONTRACT_TYPE_LABELS[emp.contractType] : '',
+      [text.exportStatus]: emp.status ? EMPLOYEE_STATUS_LABELS[emp.status] : '',
+      [text.exportGrossSalary]: emp.grossSalary ? formatCurrency(emp.grossSalary) : '',
+      [text.exportSocialInsurance]: emp.socialInsuranceSalary ? formatCurrency(emp.socialInsuranceSalary) : '',
+      [text.exportTraineeSalary]: emp.traineeSalary ? formatCurrency(emp.traineeSalary) : '',
+    }));
+    exportToCSV(exportData, `users_${Date.now()}.csv`);
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div className="min-w-0 flex-1">
+          <p className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-2">{text.statusSubtabs}</p>
+          <div
+            className="inline-flex flex-wrap rounded-xl border border-slate-200 bg-slate-50/90 p-1 gap-1"
+            role="tablist"
+            aria-label={text.statusSubtabs}
+          >
+            {statusTabs.map(tab => {
+              const selected = selectedStatusTab === tab.id;
+              const n = countForStatusTab(tab.id);
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={selected}
+                  onClick={() => setSelectedStatusTab(tab.id)}
+                  className={`px-3 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${
+                    selected
+                      ? 'bg-white text-blue-700 shadow-sm ring-1 ring-slate-200/80'
+                      : 'text-slate-600 hover:bg-white/70 hover:text-slate-800'
+                  }`}
+                >
+                  <span>{tab.label}</span>
+                  <span
+                    className={`tabular-nums min-w-[1.25rem] h-5 flex items-center justify-center rounded-md text-[10px] font-bold ${
+                      selected ? 'bg-blue-100 text-blue-700' : 'bg-slate-200/80 text-slate-600'
+                    }`}
+                  >
+                    {n}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-3 shrink-0">
+          <button
+            type="button"
+            onClick={() => { 
+              setShowUserForm(!showUserForm); 
+              setUserFormError(''); 
+              setFieldErrors({});
+              setUserForm(defaultUserForm); 
+            }}
+            className="px-6 py-3 rounded-xl text-sm font-bold bg-blue-600 text-white shadow-lg hover:bg-blue-700 transition-colors"
+          >
+            {showUserForm ? text.closeForm : text.addEmployee}
+          </button>
+          <button
+            onClick={handleExport}
+            disabled={filteredEmployees.length === 0}
+            className="px-4 py-2 bg-green-600 text-white rounded-xl text-sm font-bold hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+            </svg>
+            {text.exportCSV}
+          </button>
+        </div>
+      </div>
+
+      {showUserForm && (
+        <form onSubmit={handleCreateUser} className="bg-white p-6 rounded-2xl shadow-sm border border-sky-50 space-y-4">
+          {userFormError && <p className="text-sm text-red-600 font-medium bg-red-50 p-3 rounded-xl">{userFormError}</p>}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-bold text-slate-500 mb-1">{text.emailLogin} *</label>
+              <input 
+                type="email" 
+                required 
+                value={userForm.email} 
+                onChange={e => {
+                  setUserForm(f => ({ ...f, email: e.target.value }));
+                  if (fieldErrors.email) setFieldErrors(prev => ({ ...prev, email: undefined }));
+                }} 
+                placeholder={text.emailPlaceholder} 
+                className={`w-full rounded-xl border px-4 py-2.5 text-sm ${
+                  fieldErrors.email ? 'border-red-300 bg-red-50' : 'border-slate-200'
+                }`} 
+              />
+              {fieldErrors.email && <span className="text-xs text-red-600 mt-1 block">{fieldErrors.email}</span>}
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-500 mb-1">{text.fullName} *</label>
+              <input 
+                type="text" 
+                required 
+                value={userForm.name} 
+                onChange={e => {
+                  setUserForm(f => ({ ...f, name: e.target.value }));
+                  if (fieldErrors.name) setFieldErrors(prev => ({ ...prev, name: undefined }));
+                }} 
+                placeholder={text.namePlaceholder} 
+                className={`w-full rounded-xl border px-4 py-2.5 text-sm ${
+                  fieldErrors.name ? 'border-red-300 bg-red-50' : 'border-slate-200'
+                }`} 
+              />
+              {fieldErrors.name && <span className="text-xs text-red-600 mt-1 block">{fieldErrors.name}</span>}
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-500 mb-1">{text.department} *</label>
+              <select
+                required
+                value={userForm.department}
+                onChange={e => {
+                  setUserForm(f => ({ ...f, department: e.target.value }));
+                  if (fieldErrors.department) setFieldErrors(prev => ({ ...prev, department: undefined }));
+                }}
+                className={`w-full rounded-xl border px-4 py-2.5 text-sm ${
+                  fieldErrors.department ? 'border-red-300 bg-red-50' : 'border-slate-200'
+                }`}
+              >
+                <option value="">{text.selectDepartment}</option>
+                {departments.map(dept => (
+                  <option key={dept.id} value={dept.name}>
+                    {dept.name} {dept.code ? `(${dept.code})` : ''}
+                  </option>
+                ))}
+              </select>
+              {fieldErrors.department && <span className="text-xs text-red-600 mt-1 block">{fieldErrors.department}</span>}
+              {departments.length === 0 && (
+                <p className="text-xs text-amber-600 mt-1">
+                  {text.noDepartments}
+                </p>
+              )}
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-500 mb-1">{text.employeeCode}</label>
+              <input type="text" value={userForm.employeeCode} onChange={e => setUserForm(f => ({ ...f, employeeCode: e.target.value }))} placeholder={text.codePlaceholder} className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm" />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-500 mb-1">{text.branch}</label>
+              <select
+                value={userForm.branchId}
+                onChange={e => setUserForm(f => ({ ...f, branchId: e.target.value }))}
+                className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm"
+              >
+                <option value="">{text.selectBranch}</option>
+                {branches.map(branch => (
+                  <option key={branch.id} value={branch.id}>
+                    {branch.name} ({branch.code})
+                  </option>
+                ))}
+              </select>
+              {branches.length === 0 && (
+                <p className="text-xs text-amber-600 mt-1">
+                  {text.noBranches}
+                </p>
+              )}
+            </div>
+          </div>
+          <button type="submit" className="w-full py-3 rounded-xl text-sm font-bold bg-blue-600 text-white shadow-md hover:bg-blue-700 transition-colors">{text.createAccount}</button>
+        </form>
+      )}
+
+      {employees.length === 0 ? (
+        <div className="text-center py-12 bg-white rounded-2xl border border-sky-50">
+          <p className="text-slate-400 font-medium">{text.noEmployees}</p>
+        </div>
+      ) : filteredEmployees.length === 0 ? (
+        <div className="text-center py-12 bg-white rounded-2xl border border-sky-50">
+          <p className="text-slate-400 font-medium">{text.noFilteredEmployees}</p>
+        </div>
+      ) : (
+        <div className="bg-white rounded-2xl shadow-sm border border-sky-50 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-slate-50 border-b border-slate-200">
+                <tr>
+                  <th className="px-6 py-4 text-left text-xs font-bold text-slate-600 uppercase">{text.employee}</th>
+                  <th className="px-6 py-4 text-left text-xs font-bold text-slate-600 uppercase">{text.email}</th>
+                  <th className="px-6 py-4 text-left text-xs font-bold text-slate-600 uppercase">{text.department}</th>
+                  <th className="px-6 py-4 text-left text-xs font-bold text-slate-600 uppercase">{text.branch}</th>
+                  <th className="px-6 py-4 text-left text-xs font-bold text-slate-600 uppercase">{text.role}</th>
+                  <th className="px-6 py-4 text-left text-xs font-bold text-slate-600 uppercase">{text.empCode}</th>
+                  <th className="px-6 py-4 text-left text-xs font-bold text-slate-600 uppercase">{text.salary}</th>
+                  <th className="px-6 py-4 text-left text-xs font-bold text-slate-600 uppercase">{text.status}</th>
+                  <th className="px-6 py-4 text-left text-xs font-bold text-slate-600 uppercase">{text.actions}</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {filteredEmployees.map((emp: User) => (
+                  <tr key={emp.id} className="hover:bg-sky-50/50 transition-colors">
+                    <td className="px-6 py-4">
+                      <div className="flex items-center space-x-3">
+                        {emp.avatarUrl ? (
+                          <img 
+                            src={emp.avatarUrl} 
+                            alt={emp.name}
+                            className="w-10 h-10 rounded-full object-cover"
+                            onError={(e) => {
+                              // Fallback to initial if image fails to load
+                              const target = e.target as HTMLImageElement;
+                              target.style.display = 'none';
+                              const fallback = target.nextElementSibling as HTMLElement;
+                              if (fallback) fallback.style.display = 'flex';
+                            }}
+                          />
+                        ) : null}
+                        <div 
+                          className={`w-10 h-10 rounded-full bg-gradient-to-br from-blue-100 to-cyan-100 flex items-center justify-center text-blue-600 font-bold text-sm ${emp.avatarUrl ? 'hidden' : ''}`}
+                        >
+                          {emp.name.charAt(0)}
+                        </div>
+                        <div>
+                          <p className="text-sm font-bold text-slate-800">{emp.name}</p>
+                          {emp.jobTitle && <p className="text-xs text-slate-500">{emp.jobTitle}</p>}
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <p className="text-sm text-slate-700">{emp.email}</p>
+                    </td>
+                    <td className="px-6 py-4">
+                      <p className="text-sm text-slate-700">{emp.department}</p>
+                    </td>
+                    <td className="px-6 py-4">
+                      <p className="text-sm text-slate-700">
+                        {emp.branchId && branches.find(b => b.id === emp.branchId)?.name || '-'}
+                      </p>
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className={`text-xs font-bold px-2 py-1 rounded ${
+                        emp.role === UserRole.ADMIN ? 'bg-purple-100 text-purple-600' :
+                        'bg-slate-100 text-slate-600'
+                      }`}>
+                        {emp.role === UserRole.ADMIN ? text.admin : text.employeeRole}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <p className="text-sm text-slate-700">{emp.employeeCode || '-'}</p>
+                    </td>
+                    <td className="px-6 py-4">
+                      {emp.grossSalary != null ? (
+                        <p className="text-sm font-bold text-blue-600">{formatCurrency(emp.grossSalary)}</p>
+                      ) : (
+                        <p className="text-sm text-slate-400">-</p>
+                      )}
+                    </td>
+                    <td className="px-6 py-4">
+                      {emp.status ? (
+                        <span className={`text-xs font-bold px-2 py-1 rounded ${emp.status === EmployeeStatus.ACTIVE ? 'bg-green-100 text-green-600' : 'bg-slate-100 text-slate-500'}`}>
+                          {EMPLOYEE_STATUS_LABELS[emp.status]}
+                        </span>
+                      ) : (
+                        <span className="text-xs font-bold px-2 py-1 rounded bg-amber-50 text-amber-700 border border-amber-100">
+                          {text.unsetStatusTab}
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-6 py-4">
+                      <button
+                        onClick={() => onEditUser(emp)}
+                        className="text-sm text-blue-600 hover:text-blue-700 font-medium"
+                      >
+                        {text.edit}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default UsersManagement;

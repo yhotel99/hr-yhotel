@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Test Authentication - Y99 HR</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      max-width: 600px;
+      margin: 50px auto;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    .container {
+      background: white;
+      padding: 30px;
+      border-radius: 10px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    }
+    h1 {
+      color: #333;
+      margin-bottom: 30px;
+    }
+    .form-group {
+      margin-bottom: 20px;
+    }
+    label {
+      display: block;
+      margin-bottom: 5px;
+      font-weight: 500;
+      color: #555;
+    }
+    input {
+      width: 100%;
+      padding: 10px;
+      border: 1px solid #ddd;
+      border-radius: 5px;
+      font-size: 16px;
+      box-sizing: border-box;
+    }
+    button {
+      width: 100%;
+      padding: 12px;
+      background: #4CAF50;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      font-size: 16px;
+      cursor: pointer;
+      font-weight: 500;
+    }
+    button:hover {
+      background: #45a049;
+    }
+    button:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+    .result {
+      margin-top: 20px;
+      padding: 15px;
+      border-radius: 5px;
+      display: none;
+    }
+    .result.success {
+      background: #d4edda;
+      color: #155724;
+      border: 1px solid #c3e6cb;
+    }
+    .result.error {
+      background: #f8d7da;
+      color: #721c24;
+      border: 1px solid #f5c6cb;
+    }
+    .info {
+      background: #e7f3ff;
+      padding: 15px;
+      border-radius: 5px;
+      margin-bottom: 20px;
+      border-left: 4px solid #2196F3;
+    }
+    .step {
+      display: none;
+    }
+    .step.active {
+      display: block;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🔐 Test Authentication</h1>
+    
+    <div class="info">
+      <strong>Test Flow:</strong>
+      <ol style="margin: 10px 0 0 0; padding-left: 20px;">
+        <li>Nhập email (admin@congty.com)</li>
+        <li>Nhận mã OTP qua email</li>
+        <li>Nhập mã OTP để đăng nhập</li>
+      </ol>
+    </div>
+
+    <!-- Step 1: Request OTP -->
+    <div id="step1" class="step active">
+      <div class="form-group">
+        <label for="email">Email:</label>
+        <input type="email" id="email" placeholder="admin@congty.com" value="admin@congty.com">
+      </div>
+      <button id="sendOtpBtn" onclick="sendOTP()">Gửi mã OTP</button>
+    </div>
+
+    <!-- Step 2: Verify OTP -->
+    <div id="step2" class="step">
+      <div class="form-group">
+        <label for="otp">Mã OTP (6 chữ số):</label>
+        <input type="text" id="otp" placeholder="123456" maxlength="6">
+      </div>
+      <button id="verifyOtpBtn" onclick="verifyOTP()">Xác nhận OTP</button>
+      <button onclick="backToStep1()" style="background: #666; margin-top: 10px;">Quay lại</button>
+    </div>
+
+    <!-- Step 3: Success -->
+    <div id="step3" class="step">
+      <div class="result success" style="display: block;">
+        <strong>✅ Đăng nhập thành công!</strong>
+        <div id="userInfo" style="margin-top: 10px;"></div>
+      </div>
+      <button onclick="logout()" style="background: #f44336; margin-top: 20px;">Đăng xuất</button>
+    </div>
+
+    <div id="result" class="result"></div>
+  </div>
+
+  <script type="module">
+    import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm'
+
+    const SUPABASE_URL = 'https://ekjbzxtodfxssigmvkyi.supabase.co'
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVramJ6eHRvZGZ4c3NpZ212a3lpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc0Mjc0NTQsImV4cCI6MjA5MzAwMzQ1NH0.yN3R6Vs2-zR5AEv1le0TAjttIMMDsYUv2nWQS_1G4RE'
+
+    window.supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+
+    window.sendOTP = async function() {
+      const email = document.getElementById('email').value
+      const btn = document.getElementById('sendOtpBtn')
+      const result = document.getElementById('result')
+
+      if (!email) {
+        showResult('Vui lòng nhập email', 'error')
+        return
+      }
+
+      btn.disabled = true
+      btn.textContent = 'Đang gửi...'
+      result.style.display = 'none'
+
+      try {
+        // Generate OTP
+        const otpCode = Math.floor(100000 + Math.random() * 900000).toString()
+        const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString()
+
+        // Save OTP to database
+        const { error: insertError } = await window.supabase
+          .from('otp_codes')
+          .insert({
+            email: email,
+            code: otpCode,
+            expires_at: expiresAt,
+            used: false
+          })
+
+        if (insertError) throw insertError
+
+        // Send OTP via email
+        const { data, error } = await window.supabase.functions.invoke('send-otp-email', {
+          body: { email, otpCode, userName: 'Admin' }
+        })
+
+        if (error) throw error
+
+        showResult(`✅ Mã OTP đã được gửi đến ${email}. Kiểm tra email của bạn!`, 'success')
+        setTimeout(() => {
+          showStep(2)
+        }, 2000)
+
+      } catch (error) {
+        console.error('Error:', error)
+        showResult(`❌ Lỗi: ${error.message}`, 'error')
+      } finally {
+        btn.disabled = false
+        btn.textContent = 'Gửi mã OTP'
+      }
+    }
+
+    window.verifyOTP = async function() {
+      const email = document.getElementById('email').value
+      const otp = document.getElementById('otp').value
+      const btn = document.getElementById('verifyOtpBtn')
+      const result = document.getElementById('result')
+
+      if (!otp || otp.length !== 6) {
+        showResult('Vui lòng nhập mã OTP 6 chữ số', 'error')
+        return
+      }
+
+      btn.disabled = true
+      btn.textContent = 'Đang xác nhận...'
+      result.style.display = 'none'
+
+      try {
+        // Verify OTP
+        const { data: otpData, error: otpError } = await window.supabase
+          .from('otp_codes')
+          .select('*')
+          .eq('email', email)
+          .eq('code', otp)
+          .eq('used', false)
+          .gt('expires_at', new Date().toISOString())
+          .single()
+
+        if (otpError || !otpData) {
+          throw new Error('Mã OTP không hợp lệ hoặc đã hết hạn')
+        }
+
+        // Mark OTP as used
+        await window.supabase
+          .from('otp_codes')
+          .update({ used: true })
+          .eq('id', otpData.id)
+
+        // Get user info
+        const { data: userData, error: userError } = await window.supabase
+          .from('users')
+          .select('*')
+          .eq('email', email)
+          .single()
+
+        if (userError) throw userError
+
+        // Show success
+        document.getElementById('userInfo').innerHTML = `
+          <strong>Thông tin user:</strong><br>
+          Tên: ${userData.name}<br>
+          Email: ${userData.email}<br>
+          Role: ${userData.role}<br>
+          Department: ${userData.department}
+        `
+        showStep(3)
+
+      } catch (error) {
+        console.error('Error:', error)
+        showResult(`❌ ${error.message}`, 'error')
+      } finally {
+        btn.disabled = false
+        btn.textContent = 'Xác nhận OTP'
+      }
+    }
+
+    window.backToStep1 = function() {
+      showStep(1)
+      document.getElementById('otp').value = ''
+    }
+
+    window.logout = function() {
+      showStep(1)
+      document.getElementById('email').value = ''
+      document.getElementById('otp').value = ''
+      showResult('Đã đăng xuất', 'success')
+      setTimeout(() => {
+        document.getElementById('result').style.display = 'none'
+      }, 2000)
+    }
+
+    function showStep(step) {
+      document.querySelectorAll('.step').forEach(s => s.classList.remove('active'))
+      document.getElementById(`step${step}`).classList.add('active')
+    }
+
+    function showResult(message, type) {
+      const result = document.getElementById('result')
+      result.textContent = message
+      result.className = `result ${type}`
+      result.style.display = 'block'
+    }
+  </script>
+</body>
+</html>
